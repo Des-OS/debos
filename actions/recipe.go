@@ -114,24 +114,18 @@ type Recipe struct {
 }
 
 func (y *YamlAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var msg yaml.RawMessage
+	var raw map[string]interface{}
 
-	if err := unmarshal(&msg); err != nil {
+	if err := unmarshal(&raw); err != nil {
 		return err
 	}
 
-	// extract the action name from the message
-	var hdr struct {
-		Action string `yaml:"action"`
-	}
-	if err := yaml.Unmarshal([]byte(msg), &hdr); err != nil {
-		return err
-	}
-	if hdr.Action == "" {
+	action, ok := raw["action"].(string)
+	if !ok || action == "" {
 		return fmt.Errorf("missing or invalid 'action' field")
 	}
 
-	switch hdr.Action {
+	switch action {
 	case "debootstrap":
 		y.Action = NewDebootstrapAction()
 	case "mmdebstrap":
@@ -165,12 +159,12 @@ func (y *YamlAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case "recipe":
 		y.Action = &RecipeAction{}
 	default:
-		return fmt.Errorf("unknown action: %v", hdr.Action)
+		return fmt.Errorf("unknown action: %v", action)
 	}
 
-	// decode the action (and verify there are no unknown fields)
-	if err := yaml.UnmarshalWithOptions([]byte(msg), y.Action, yaml.DisallowUnknownField()); err != nil {
-		return fmt.Errorf("action %q: %w", hdr.Action, err)
+	err := unmarshal(y.Action)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -313,7 +307,11 @@ func (r *Recipe) Parse(file string, printRecipe bool, dump bool, templateVars ..
 		log.Printf("%s", data)
 	}
 
-	if err := yaml.Unmarshal(data.Bytes(), r); err != nil {
+	if err := yaml.UnmarshalWithOptions(
+		data.Bytes(),
+		r,
+		yaml.DisallowUnknownField(),
+	); err != nil {
 		return err
 	}
 
